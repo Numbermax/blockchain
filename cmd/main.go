@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 
 	"github.com/numbermax/blockchain/internal/config"
 	"github.com/numbermax/blockchain/internal/lib/logger/handlers/slogpretty"
+	"github.com/numbermax/blockchain/internal/services/blockchain"
 )
 
 const (
@@ -23,7 +25,18 @@ func main() {
 	logger := setupLogger(config.Env)
 
 	logger.Info(config.Env)
-	fmt.Println("Hello, World!")
+
+	chain := blockchain.InitBlockChain()
+	chain.AddBlock("First block after genesis")
+	chain.AddBlock("Second block after genesis")
+	chain.AddBlock("Third block after genesis")
+
+	for _, block := range chain.GetBlocks() {
+		logger.Info("Block", slog.String("hash", fmt.Sprintf("%x", block.Hash)), slog.String("data", string(block.Data)))
+
+		pow := blockchain.NewProof(block)
+		logger.Info("Proof of Work", slog.String("valid", strconv.FormatBool(pow.Validate())))
+	}
 }
 
 func setupLogger(env string) *slog.Logger {
