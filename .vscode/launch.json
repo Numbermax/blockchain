@@ -12,7 +12,7 @@
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/main.go",
             "cwd": "${workspaceFolder}",
-            "args": ["print"]
+            "args": ["getbalance", "-address", "secondaddr"]
         }
     ]
 }

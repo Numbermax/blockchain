@@ -20,14 +20,15 @@ const (
 )
 
 type ComandLine struct {
-	logger    *slog.Logger
-	blockcain *blockchain.BlockChain
+	logger *slog.Logger
 }
 
 func (cli *ComandLine) printUsage() {
 	fmt.Println("Usage:")
-	fmt.Println(" add -block BLOCK_DATA - add a block to the chain")
-	fmt.Println(" print - Prints the blocks in the chain")
+	fmt.Println(" getbalance -address ADDRESS - get balance for the address")
+	fmt.Println(" createblockchain -address ADDRESS - created a blockchain")
+	fmt.Println(" printchain - Prints the blocks in the chain")
+	fmt.Println(" send -from FROM -to TO -amount AMOUNT - send amount to the address")
 }
 
 func (cli *ComandLine) ValidateArguments() {
@@ -36,26 +37,50 @@ func (cli *ComandLine) ValidateArguments() {
 	}
 }
 
-func (cli *ComandLine) addBlock(data string) {
-	cli.blockcain.AddBlock(data)
-	cli.logger.Info("Added Block")
-}
-
 func (cli *ComandLine) printChain() {
-	iter := cli.blockcain.Iterator()
+	chain := blockchain.ContinueBlockChain(*cli.logger, "")
+	defer chain.Database.Close()
+	iter := chain.Iterator()
 
 	for {
 		block := iter.Next()
-
-		cli.logger.Info("Block", slog.String("hash", fmt.Sprintf("%x", block.Hash)), slog.String("data", string(block.Data)))
-
+		cli.logger.Info("Block", slog.String("hash", fmt.Sprintf("%x", block.Hash)))
 		pow := blockchain.NewProof(block)
 		cli.logger.Info("Proof of Work", slog.String("valid", strconv.FormatBool(pow.Validate())))
-
 		if len(block.PrevHash) == 0 {
 			break
 		}
 	}
+}
+
+func (cli *ComandLine) getBalance(address string) {
+	chain := blockchain.ContinueBlockChain(*cli.logger, address)
+	defer chain.Database.Close()
+
+	balance := 0
+	UTXOs := chain.FindUTXO(address)
+
+	for _, out := range UTXOs {
+		balance += out.Value
+	}
+
+	cli.logger.Info("Balance: counted", slog.String("Balance: ", fmt.Sprintf("%d", balance)), slog.String("address: ", address))
+}
+
+func (cli *ComandLine) send(from, to string, amount int) {
+	chain := blockchain.ContinueBlockChain(*cli.logger, from)
+	defer chain.Database.Close()
+
+	tx := blockchain.NewTransaction(from, to, amount, chain)
+
+	chain.AddBlock([]*blockchain.Transaction{tx})
+	cli.logger.Info("Success")
+}
+
+func (cli *ComandLine) createBlockchain(address string) {
+	chain := blockchain.InitBlockChain(*cli.logger, address)
+	chain.Database.Close()
+	cli.logger.Info("Finished")
 }
 
 func (cli *ComandLine) gracefullExit() {
@@ -66,16 +91,31 @@ func (cli *ComandLine) gracefullExit() {
 func (cli *ComandLine) run() {
 	cli.ValidateArguments()
 
-	addBlockCmd := flag.NewFlagSet("add", flag.ExitOnError)
+	getbalanceCmd := flag.NewFlagSet("getbalance", flag.ExitOnError)
+	createblockchainCmd := flag.NewFlagSet("createblockchain", flag.ExitOnError)
+	sendCmd := flag.NewFlagSet("send", flag.ExitOnError)
 	printChainCmd := flag.NewFlagSet("print", flag.ExitOnError)
-	addBlockData := addBlockCmd.String("block", "", "BlockData")
+
+	getBalanceAddress := getbalanceCmd.String("address", "", "Address to get balance for")
+	createBlockChainAddress := createblockchainCmd.String("address", "", "Address to create blockchain for")
+	sendFrom := sendCmd.String("from", "", "Address to send from")
+	sendTo := sendCmd.String("to", "", "Address to send to")
+	sendAmount := sendCmd.Int("amount", 0, "Amount to send")
 
 	switch os.Args[1] {
-	case "add":
-		err := addBlockCmd.Parse(os.Args[2:])
+	case "getbalance":
+		err := getbalanceCmd.Parse(os.Args[2:])
 		blockchain.ErrHandle(err)
 
-	case "print":
+	case "createblockchain":
+		err := createblockchainCmd.Parse(os.Args[2:])
+		blockchain.ErrHandle(err)
+
+	case "send":
+		err := sendCmd.Parse(os.Args[2:])
+		blockchain.ErrHandle(err)
+
+	case "printchain":
 		err := printChainCmd.Parse(os.Args[2:])
 		blockchain.ErrHandle(err)
 
@@ -83,17 +123,33 @@ func (cli *ComandLine) run() {
 		cli.gracefullExit()
 	}
 
-	if addBlockCmd.Parsed() {
-		if *addBlockData == "" {
+	if getbalanceCmd.Parsed() {
+		if *getBalanceAddress == "" {
+			cli.logger.Error("Address is required for getbalance command")
 			cli.gracefullExit()
 		}
-		cli.addBlock(*addBlockData)
+		cli.getBalance(*getBalanceAddress)
+	}
+	if createblockchainCmd.Parsed() {
+		if *createBlockChainAddress == "" {
+			cli.logger.Error("Address is required for createblockchain command")
+			cli.gracefullExit()
+		}
+		cli.createBlockchain(*createBlockChainAddress)
 	}
 
+	if sendCmd.Parsed() {
+		if *sendFrom == "" || *sendTo == "" || *sendAmount <= 0 {
+			cli.logger.Error("From, To and Amount are required for send command")
+			cli.gracefullExit()
+		}
+		cli.send(*sendFrom, *sendTo, *sendAmount)
+	}
+
+	// Print chain
 	if printChainCmd.Parsed() {
 		cli.printChain()
 	}
-
 }
 
 func main() {
@@ -106,10 +162,7 @@ func main() {
 
 	// logger.Info(config.Env)
 
-	chain := blockchain.InitBlockChain()
-	defer chain.Database.Close()
-
-	cli := ComandLine{logger, chain}
+	cli := ComandLine{logger}
 	cli.run()
 }
 
