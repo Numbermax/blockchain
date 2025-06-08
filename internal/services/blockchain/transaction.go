@@ -31,25 +31,6 @@ func (tx *Transaction) IsCoinbase() bool {
 	return len(tx.Inputs) == 1 && len(tx.Inputs[0].ID) == 0 && tx.Inputs[0].Out == -1
 }
 
-type TxOutput struct {
-	Value     int
-	PublicKey string
-}
-
-func (out *TxOutput) CanBeUnlocked(data string) bool {
-	return out.PublicKey == data
-}
-
-type TxInput struct {
-	ID  []byte
-	Out int
-	Sig string
-}
-
-func (in *TxInput) CanUnlock(data string) bool {
-	return in.Sig == data
-}
-
 func CoinbaseTx(to, data string) *Transaction {
 	if data == "" {
 		data = fmt.Sprintf("Coins to %s", to)
