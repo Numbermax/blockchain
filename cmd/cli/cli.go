@@ -3,6 +3,7 @@ package cli
 import (
 	"flag"
 	"fmt"
+	"log"
 	"log/slog"
 	"os"
 	"runtime"
@@ -42,6 +43,11 @@ func (cli *CommandLine) printChain() {
 		cli.Logger.Info("Block", slog.String("hash", fmt.Sprintf("%x", block.Hash)))
 		pow := blockchain.NewProof(block)
 		cli.Logger.Info("Proof of Work", slog.String("valid", strconv.FormatBool(pow.Validate())))
+		for _, tx := range block.Transactions {
+			fmt.Println(tx)
+		}
+		fmt.Println()
+
 		if len(block.PrevHash) == 0 {
 			break
 		}
@@ -49,11 +55,17 @@ func (cli *CommandLine) printChain() {
 }
 
 func (cli *CommandLine) getBalance(address string) {
+	if !wallet.ValidateAddress(address) {
+		log.Panic("The address is not valid")
+	}
+
 	chain := blockchain.ContinueBlockChain(*cli.Logger, address)
 	defer chain.Database.Close()
 
 	balance := 0
-	UTXOs := chain.FindUTXO(address)
+	pubKeyHash := wallet.Base58Decode([]byte(address))
+	pubKeyHash = pubKeyHash[1 : len(pubKeyHash)-4]
+	UTXOs := chain.FindUTXO(pubKeyHash)
 
 	for _, out := range UTXOs {
 		balance += out.Value
@@ -63,6 +75,15 @@ func (cli *CommandLine) getBalance(address string) {
 }
 
 func (cli *CommandLine) send(from, to string, amount int) {
+
+	if !wallet.ValidateAddress(from) {
+		log.Panic("The from address is not valid")
+	}
+
+	if !wallet.ValidateAddress(to) {
+		log.Panic("The 'to' address is not valid")
+	}
+
 	chain := blockchain.ContinueBlockChain(*cli.Logger, from)
 	defer chain.Database.Close()
 
@@ -73,6 +94,10 @@ func (cli *CommandLine) send(from, to string, amount int) {
 }
 
 func (cli *CommandLine) createBlockchain(address string) {
+	if !wallet.ValidateAddress(address) {
+		log.Panic("The address is not valid")
+	}
+
 	chain := blockchain.InitBlockChain(*cli.Logger, address)
 	chain.Database.Close()
 	cli.Logger.Info("Finished")
